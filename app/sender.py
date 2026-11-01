@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 from playwright.async_api import Locator, Page
 
-from app.douyin import DouyinChat, PageOperationError, first_visible
+from app.douyin import DouyinChat, PageOperationError, SendRejectedError, first_visible
 from app.models import Message, Sticker
 from app.selectors import IMAGE_INPUTS, MESSAGE_INPUTS, STICKER_BUTTONS, STICKER_PANELS
 
@@ -278,6 +278,10 @@ async def _click_and_confirm_sticker(page: Page, item, before: tuple[str, str], 
     await item.click(force=True)
     try:
         await _confirm_sticker_sent(page, before, name, resource_key)
+    except SendRejectedError:
+        # A visible failure marker is an explicit rejection, not permission to
+        # retry. Keep the original attempt and stop without a second send.
+        raise
     except PageOperationError as exc:
         if "页面提示可以重试" in str(exc) and await _click_retry_on_latest_failed_message(page):
             await _confirm_sticker_sent(page, before, name, resource_key)
@@ -387,7 +391,7 @@ async def _await_send_terminal_state(
                 f"{label}发送状态未能确认（发送超时或状态不确定），为避免重复不会自动重试"
             )
         if await _marker_visible(scope, SEND_FAILURE_MARKERS):
-            raise PageOperationError(f"{label}发送失败，页面提示可以重试")
+            raise SendRejectedError(f"{label}发送失败，页面提示可以重试")
         if await _marker_visible(scope, SEND_PENDING_MARKERS):
             break  # -> resolve pending in Phase 2
         await page.wait_for_timeout(SEND_POLL_INTERVAL_MS)
@@ -403,13 +407,13 @@ async def _await_send_terminal_state(
                 f"{label}发送状态未能确认（发送超时或状态不确定），为避免重复不会自动重试"
             )
         if await _marker_visible(scope, SEND_FAILURE_MARKERS):
-            raise PageOperationError(f"{label}发送失败，页面提示可以重试")
+            raise SendRejectedError(f"{label}发送失败，页面提示可以重试")
         if not await _marker_visible(scope, SEND_PENDING_MARKERS):
             # Spinner gone. Require it to STAY clear across the stable window --
             # the retry marker can mount a tick after the spinner disappears.
             await page.wait_for_timeout(SEND_STABLE_INTERVAL_MS)
             if await _marker_visible(scope, SEND_FAILURE_MARKERS):
-                raise PageOperationError(f"{label}发送失败，页面提示可以重试")
+                raise SendRejectedError(f"{label}发送失败，页面提示可以重试")
             if not await _marker_visible(scope, SEND_PENDING_MARKERS):
                 return  # terminal: success
             # spinner reappeared -> keep waiting
@@ -462,3 +466,4 @@ async def _confirm_outgoing_message(
             )
         except Exception:
             pass
+

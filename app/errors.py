@@ -11,6 +11,7 @@ class ErrorCategory(Enum):
     PERMANENT = "permanent"           # 永久性错误，不应重试（好友不存在、配置错误）
     AUTHENTICATION = "authentication" # 认证失效，应立即停止所有任务
     RATE_LIMIT = "rate_limit"        # 风控/限流，需要更长延迟或停止
+    SEND_REJECTED = "send_rejected"  # 页面明确显示发送失败；原因尚不明确，立即停止
 
 
 class RetryStrategy:
@@ -41,6 +42,7 @@ RETRY_STRATEGIES = {
     ErrorCategory.PERMANENT: RetryStrategy(max_retries=0, delay_seconds=0.0),
     ErrorCategory.AUTHENTICATION: RetryStrategy(max_retries=0, delay_seconds=0.0),
     ErrorCategory.RATE_LIMIT: RetryStrategy(max_retries=1, delay_seconds=30.0),
+    ErrorCategory.SEND_REJECTED: RetryStrategy(max_retries=0, delay_seconds=0.0),
 }
 
 
@@ -54,7 +56,7 @@ def classify_error(exc: Exception) -> ErrorCategory:
         错误类别
     """
     from app.browser import AuthenticationError, RiskControlError, SearchBoxNotReadyError
-    from app.douyin import PageOperationError
+    from app.douyin import PageOperationError, SendRejectedError
     from app.config import ConfigError
 
     # 认证失效 - 立即停止
@@ -64,6 +66,11 @@ def classify_error(exc: Exception) -> ErrorCategory:
     # 风控检测 - 限流处理
     if isinstance(exc, RiskControlError):
         return ErrorCategory.RATE_LIMIT
+
+    # A platform rejection alone does not establish captcha, risk-control,
+    # expired credentials or transient networking as the underlying cause.
+    if isinstance(exc, SendRejectedError):
+        return ErrorCategory.SEND_REJECTED
 
     # 配置错误 - 永久性错误
     if isinstance(exc, ConfigError):
@@ -132,4 +139,5 @@ def should_stop_all_tasks(exc: Exception) -> bool:
         是否应该停止所有任务
     """
     category = classify_error(exc)
-    return category in (ErrorCategory.AUTHENTICATION, ErrorCategory.RATE_LIMIT)
+    return category in (ErrorCategory.AUTHENTICATION, ErrorCategory.RATE_LIMIT, ErrorCategory.SEND_REJECTED)
+

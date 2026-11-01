@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.models import Message
-from app.douyin import PageOperationError
+from app.douyin import PageOperationError, SendRejectedError
 from app.selectors import IMAGE_INPUTS
 from app.sender import (
     LATEST_OUTGOING_MESSAGE,
@@ -309,7 +309,7 @@ async def test_sticker_click_retries_via_publish_when_staged(monkeypatch) -> Non
 
 
 @pytest.mark.asyncio
-async def test_sticker_click_retries_via_retry_marker_when_failed(monkeypatch) -> None:
+async def test_sticker_rejection_does_not_click_retry_marker(monkeypatch) -> None:
     item = MagicMock()
     item.get_attribute = AsyncMock(return_value=None)
     item.click = AsyncMock()
@@ -338,7 +338,7 @@ async def test_sticker_click_retries_via_retry_marker_when_failed(monkeypatch) -
     async def fake_confirm(_page, _before, _name, _key=""):
         calls["confirm"] += 1
         if calls["confirm"] == 1:
-            raise PageOperationError("发送失败，页面提示可以重试")
+            raise SendRejectedError("发送失败，页面提示可以重试")
         return None
 
     async def fake_trigger(_page):
@@ -351,11 +351,12 @@ async def test_sticker_click_retries_via_retry_marker_when_failed(monkeypatch) -
     monkeypatch.setattr("app.sender._trigger_send", fake_trigger)
     monkeypatch.setattr("app.sender._publish_ready", fake_ready)
 
-    await _click_and_confirm_sticker(page, item, ("anchor", "old"), "比心")
+    with pytest.raises(SendRejectedError):
+        await _click_and_confirm_sticker(page, item, ("anchor", "old"), "比心")
 
-    assert calls["confirm"] == 2
+    assert calls["confirm"] == 1
     assert calls["publish"] == 0
-    marker.click.assert_awaited_once_with(force=True)
+    marker.click.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1049,3 +1050,4 @@ async def test_real_image_pending_then_success(monkeypatch, tmp_path) -> None:
         await sender_module.send_image(page, img.as_posix())
     finally:
         await _teardown_real_page(page)
+

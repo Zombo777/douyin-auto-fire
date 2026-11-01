@@ -11,6 +11,10 @@ from zoneinfo import ZoneInfo
 
 from app.config import ConfigError
 
+# One additional test explicitly authorized in this session. This ID is an
+# idempotency identifier, not a credential; the durable ref consumes it once.
+APPROVED_TEST_ID = '20261101-full-chromium-test-1'
+
 
 def validate_task(task):
     if task.timezone != 'Asia/Shanghai' or not task.prevent_duplicates:
@@ -24,6 +28,13 @@ def validate_task(task):
         raise ConfigError('每位好友只能配置一条文字或随机文字消息')
     if os.getenv('LIVE_SINGLE_TARGET') == 'true' and len(names) != 1:
         raise ConfigError('真实测试只允许一个好友')
+    if os.getenv('APPROVED_TEST_ID'):
+        if (os.getenv('APPROVED_TEST_ID') != APPROVED_TEST_ID or
+                os.getenv('GITHUB_EVENT_NAME') != 'workflow_dispatch' or
+                os.getenv('LIVE_SINGLE_TARGET') != 'true' or len(names) != 1 or
+                task.targets[0].messages[0].type != 'text' or
+                task.targets[0].messages[0].content != '😊'):
+            raise ConfigError('本次授权仅允许手动向一个配置好友发送一条微笑表情')
 
 
 class GitHubDailyHistory:
@@ -37,6 +48,7 @@ class GitHubDailyHistory:
         if not isinstance(self.guard_key, str) or len(self.guard_key) < 32:
             raise ConfigError('DOUYIN_CONFIG 的 guard_key 必须是至少 32 位的随机字符串，并长期保持不变')
         self.base = 'https://api.github.com/repos/' + self.repo + '/git/'
+        self.daily_keys = {}
 
     def run_date(self, timezone):
         return datetime.now(ZoneInfo(timezone)).date().isoformat()
@@ -44,7 +56,14 @@ class GitHubDailyHistory:
     def key(self, task_id, run_date, target, message_id):
         # Stable across task and message edits; only one reservation per name per day.
         digest = hmac.new(self.guard_key.encode('utf-8'), target.encode('utf-8'), hashlib.sha256).hexdigest()
-        return f'douyin-daily/{run_date}/{digest}'
+        daily_key = f'douyin-daily/{run_date}/{digest}'
+        if os.getenv('APPROVED_TEST_ID') == APPROVED_TEST_ID:
+            if os.getenv('LIVE_SINGLE_TARGET') != 'true' or os.getenv('GITHUB_EVENT_NAME') != 'workflow_dispatch':
+                raise ConfigError('一次性测试不能用于生产定时运行')
+            key = f'douyin-authorized-test/{APPROVED_TEST_ID}/{digest}'
+            self.daily_keys[key] = daily_key
+            return key
+        return daily_key
 
     def _request(self, method, endpoint, data=None):
         body = json.dumps(data).encode() if data is not None else None
@@ -69,6 +88,11 @@ class GitHubDailyHistory:
         status = self._request('POST', 'refs', {'ref': 'refs/heads/' + key, 'sha': self.sha})
         if status != 201:
             raise RuntimeError(f'发送前占位失败 (HTTP {status})，未发送')
+        # Keep the normal daily reservation, including the previous uncertain
+        # attempt. Never delete or overwrite it to authorize this one extra test.
+        daily_key = self.daily_keys.get(key)
+        if daily_key and not self.contains(daily_key):
+            self.reserve(daily_key)
 
     def mark_success(self, key):
         pass  # reservation is intentionally retained even if delivery is uncertain

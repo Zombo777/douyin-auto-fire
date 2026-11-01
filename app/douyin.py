@@ -12,6 +12,10 @@ class PageOperationError(RuntimeError):
     pass
 
 
+class SendRejectedError(PageOperationError):
+    """The page explicitly rejected a send; the underlying cause is unknown."""
+
+
 RETRY_DELAY_MS = 3_000
 
 
@@ -332,3 +336,4 @@ async def first_visible(page: Page, selectors: tuple[str, ...], timeout_ms: int 
         except Exception:
             continue
     raise PageOperationError(f"找不到页面元素，已尝试: {', '.join(selectors)}")
+

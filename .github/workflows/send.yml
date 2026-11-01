@@ -6,6 +6,10 @@ on:
         description: '只验证登录及好友（默认不发送）'
         type: boolean
         default: true
+      approved_test:
+        description: '本次已授权的单好友微笑测试（永久只允许执行一次）'
+        type: boolean
+        default: false
   schedule:
     - cron: '30 14 * * *'
       timezone: 'Asia/Shanghai'
@@ -42,6 +46,7 @@ jobs:
           LIVE_TEST_ENABLED: ${{ vars.LIVE_TEST_ENABLED }}
           EVENT_NAME: ${{ github.event_name }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          APPROVED_TEST: ${{ inputs.approved_test }}
         run: |
           set -eu
           test -n "$DOUYIN_COOKIE" && test -n "$DOUYIN_CONFIG" || { echo '缺少必要 Secrets'; exit 1; }
@@ -49,6 +54,8 @@ jobs:
           printf '%s' "$DOUYIN_CONFIG" > config.json
           if [[ "$EVENT_NAME" == 'schedule' && "$PRODUCTION_ENABLED" == 'true' ]]; then
             python run.py
+          elif [[ "$EVENT_NAME" == 'workflow_dispatch' && "$INPUT_DRY_RUN" == 'false' && "$APPROVED_TEST" == 'true' ]]; then
+            LIVE_SINGLE_TARGET=true APPROVED_TEST_ID=20261101-full-chromium-test-1 python run.py
           elif [[ "$EVENT_NAME" == 'workflow_dispatch' && "$INPUT_DRY_RUN" == 'false' && "$LIVE_TEST_ENABLED" == 'true' ]]; then
             LIVE_SINGLE_TARGET=true python run.py
           else
