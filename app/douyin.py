@@ -68,14 +68,23 @@ async def _collect_chat_structure(page: Page) -> dict:
             if not isinstance(shape, dict):
                 continue
             families = shape.get("class_families", [])
+            tag, role = shape.get("tag"), shape.get("role")
             safe["shapes"].append({
-                "tag": shape.get("tag") if shape.get("tag") in tags else "other",
-                "role": shape.get("role") if shape.get("role") in roles else None,
+                "tag": tag if isinstance(tag, str) and tag in tags else "other",
+                "role": role if isinstance(role, str) and role in roles else None,
                 "editable": shape.get("editable") is True,
                 "visible": shape.get("visible") is True,
                 "class_families": [f for f in _SHAPE_FAMILIES if isinstance(families, list) and f in families],
             })
         result[group] = safe
+    # Counts only: detect a conversation rendered in a popup or child frame
+    # without exposing any URL, title, account or message content.
+    pages = page.context.pages
+    frames = page.frames
+    if isinstance(pages, list):
+        result["page_count"] = min(100, len(pages))
+    if isinstance(frames, list):
+        result["frame_count"] = min(100, len(frames))
     return result
 
 
@@ -272,6 +281,7 @@ class DouyinChat:
             '[class*="nickname"]',
             '[class*="Nickname"]',
         )
+        title_matches = False
         for selector in CHAT_PANEL_MARKERS[:3]:
             headers = self.page.locator(selector)
             for index in range(await headers.count()):
@@ -282,19 +292,25 @@ class DouyinChat:
                 except Exception:
                     continue
                 if await _visible_exact_or_group_text_in(header, title_selectors, name):
-                    return None
+                    title_matches = True
+                    break
+            if title_matches:
+                break
 
         composer_visible = await self._composer_visible()
+        if title_matches and composer_visible:
+            return None
         return PageOperationError(
             f"点击搜索结果后无法确认聊天已打开（输入框: {'有' if composer_visible else '无'}）"
         )
 
     async def _composer_visible(self) -> bool:
         for selector in MESSAGE_INPUTS:
-            locator = self.page.locator(selector).first
+            locators = self.page.locator(selector)
             try:
-                if await locator.count() and await locator.is_visible():
-                    return True
+                for index in range(await locators.count()):
+                    if await locators.nth(index).is_visible():
+                        return True
             except Exception:
                 continue
         return False
@@ -399,13 +415,35 @@ async def _group_name_matches(locator: Locator, expected: str) -> bool:
 
 
 async def first_visible(page: Page, selectors: tuple[str, ...], timeout_ms: int = 15_000) -> Locator:
-    per_selector = max(500, timeout_ms // max(1, len(selectors)))
-    for selector in selectors:
-        locator = page.locator(selector).first
-        try:
-            await locator.wait_for(state="visible", timeout=per_selector)
-            return locator
-        except Exception:
-            continue
-    raise PageOperationError(f"找不到页面元素，已尝试: {', '.join(selectors)}")
+    # A SPA may keep an old hidden composer before the visible current one.
+    # Inspect every match rather than letting .first hide the actionable node.
+    # One overall deadline includes locator RPCs and visibility waits.
+    deadline = asyncio.get_running_loop().time() + max(0, timeout_ms) / 1000
+
+    async def wait_for_visible() -> Locator:
+        while True:
+            for selector in selectors:
+                locators = page.locator(selector)
+                try:
+                    count = await locators.count()
+                except Exception:
+                    continue
+                for index in range(count):
+                    locator = locators.nth(index)
+                    try:
+                        if not await locator.is_visible():
+                            continue
+                        remaining = int((deadline - asyncio.get_running_loop().time()) * 1000)
+                        if remaining <= 0:
+                            raise asyncio.TimeoutError
+                        await locator.wait_for(state="visible", timeout=min(200, remaining))
+                        return locator
+                    except Exception:
+                        continue
+            await page.wait_for_timeout(100)
+
+    try:
+        return await asyncio.wait_for(wait_for_visible(), timeout=max(0, timeout_ms) / 1000)
+    except asyncio.TimeoutError as exc:
+        raise PageOperationError(f"找不到页面元素，已尝试: {', '.join(selectors)}") from exc
 

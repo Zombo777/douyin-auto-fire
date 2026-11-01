@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.douyin import DouyinChat, PageOperationError
+from app.douyin import DouyinChat, PageOperationError, first_visible
 from app.selectors import CHAT_PANEL_MARKERS, MESSAGE_INPUTS
 
 
@@ -281,8 +281,7 @@ def _chat_page(
     composer_target = MagicMock()
     composer_target.count = AsyncMock(return_value=input_count)
     composer_target.is_visible = AsyncMock(return_value=bool(input_count))
-    composer = MagicMock()
-    composer.first = composer_target
+    composer = _locator_group([composer_target] * input_count)
 
     def locator_router(selector: str):
         if selector == header_selector:
@@ -447,3 +446,21 @@ def test_group_count_suffix_matches_escapes_expected_regex_meta() -> None:
 # Suppress the unused `re` import warning the linter may raise for the
 # pure-assertion block above; `re` is intentionally kept as a sanity anchor.
 _ = re
+
+@pytest.mark.asyncio
+async def test_visible_title_without_composer_is_not_ready():
+    page = _chat_page('target', input_count=0)
+    assert isinstance(await DouyinChat(page)._chat_open_error('target'), PageOperationError)
+
+
+@pytest.mark.asyncio
+async def test_hidden_cached_composer_does_not_mask_current_input():
+    hidden, visible = MagicMock(), MagicMock()
+    hidden.is_visible = AsyncMock(return_value=False)
+    visible.is_visible = AsyncMock(return_value=True)
+    visible.wait_for = AsyncMock()
+    page = MagicMock()
+    page.locator.return_value = _locator_group([hidden, visible])
+    assert await first_visible(page, ('[contenteditable]',), 1000) is visible
+    assert await DouyinChat(page)._composer_visible()
+
