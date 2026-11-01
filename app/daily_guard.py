@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 from datetime import datetime
@@ -31,6 +32,10 @@ class GitHubDailyHistory:
         self.repo = os.environ['GITHUB_REPOSITORY']
         self.token = os.environ['GH_GUARD_TOKEN']
         self.sha = os.environ['GITHUB_SHA']
+        config = json.loads(os.environ['DOUYIN_CONFIG'])
+        self.guard_key = config.get('guard_key', '')
+        if not isinstance(self.guard_key, str) or len(self.guard_key) < 32:
+            raise ConfigError('DOUYIN_CONFIG 的 guard_key 必须是至少 32 位的随机字符串，并长期保持不变')
         self.base = 'https://api.github.com/repos/' + self.repo + '/git/'
 
     def run_date(self, timezone):
@@ -38,7 +43,7 @@ class GitHubDailyHistory:
 
     def key(self, task_id, run_date, target, message_id):
         # Stable across task and message edits; only one reservation per name per day.
-        digest = hashlib.sha256(target.encode('utf-8')).hexdigest()
+        digest = hmac.new(self.guard_key.encode('utf-8'), target.encode('utf-8'), hashlib.sha256).hexdigest()
         return f'douyin-daily/{run_date}/{digest}'
 
     def _request(self, method, endpoint, data=None):
