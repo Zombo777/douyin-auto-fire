@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import random
 import re
 import hashlib
@@ -31,6 +32,9 @@ LOGGER = logging.getLogger("douyin_sender")
 async def run(dry_run: bool = False, env_file: str | None = None) -> int:
     settings = load_settings(env_file)
     task = load_task(settings)
+    if os.getenv("GITHUB_DAILY_GUARD") == "true":
+        from app.daily_guard import validate_task
+        validate_task(task)
     settings.artifacts_dir.mkdir(parents=True, exist_ok=True)
     aliases = build_target_aliases(task.targets)
     _configure_logging(settings.artifacts_dir, aliases)
@@ -47,6 +51,9 @@ async def run(dry_run: bool = False, env_file: str | None = None) -> int:
     multi_stage, target_progress = create_single_run_progress(len(task.targets))
 
     history = History(settings.artifacts_dir / "history.json")
+    if os.getenv("GITHUB_DAILY_GUARD") == "true" and not dry_run:
+        from app.daily_guard import GitHubDailyHistory
+        history = GitHubDailyHistory()
     run_date = history.run_date(task.timezone)
     results: list[TargetResult] = []
     screenshots: list[Path] = []
@@ -436,3 +443,4 @@ async def _open_target_with_retry(chat: DouyinChat, target_name: str, max_retrie
     # 所有重试都失败，抛出最后一个异常
     if last_exception:
         raise last_exception
+

@@ -1,0 +1,9 @@
+{
+  "timezone": "Asia/Shanghai",
+  "friends": ["好友A"],
+  "messages": [{"type":"random", "choices":[{"type":"text", "value":"今天也要开心呀"}, {"type":"text", "value":"早安"}]}],
+  "send_interval_seconds": {"min": 5, "max": 10},
+  "prevent_duplicates": true,
+  "target_open_retries": 0
+}
+
