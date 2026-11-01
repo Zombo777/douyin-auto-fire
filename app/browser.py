@@ -90,17 +90,25 @@ async def open_douyin(settings: Settings) -> AsyncIterator[BrowserSession]:
         browser = await playwright.chromium.launch(**launch_args)
 
         context_args = {"viewport": {"width": 1440, "height": 1000}, "locale": "zh-CN"}
+        cookie_list = None
         if settings.storage_state:
             state = parse_auth_json(settings.storage_state, "DOUYIN_STORAGE_STATE")
             if not isinstance(state, dict):
                 raise ConfigError("DOUYIN_STORAGE_STATE 必须是 JSON 对象")
             context_args["storage_state"] = state
+        elif settings.cookie:
+            auth = parse_auth_json(settings.cookie, "DOUYIN_COOKIE")
+            if isinstance(auth, list):
+                cookie_list = _normalize_cookies(auth)
+            elif isinstance(auth, dict) and isinstance(auth.get("cookies"), list) and isinstance(auth.get("origins"), list):
+                # Accept the original project's Cookie+localStorage state in
+                # the same protected Secret, without exporting an entire profile.
+                context_args["storage_state"] = auth
+            else:
+                raise ConfigError("DOUYIN_COOKIE 必须是 Cookie 数组或包含 cookies/origins 的登录状态对象")
         context = await browser.new_context(**context_args)
-        if not settings.storage_state and settings.cookie:
-            cookies = parse_auth_json(settings.cookie, "DOUYIN_COOKIE")
-            if not isinstance(cookies, list):
-                raise ConfigError("DOUYIN_COOKIE 必须是 Cookie 数组")
-            await context.add_cookies(_normalize_cookies(cookies))
+        if cookie_list is not None:
+            await context.add_cookies(cookie_list)
 
         page = await context.new_page()
         if os.getenv("NETWORK_DIAGNOSTICS") == "true":

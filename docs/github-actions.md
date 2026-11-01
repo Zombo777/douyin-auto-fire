@@ -13,10 +13,10 @@
 
 在 Settings → Secrets and variables → Actions → Secrets 配置：
 
-1. `DOUYIN_COOKIE`：本人在已登录的抖音网页导出的完整 Cookie JSON 数组。
+1. `DOUYIN_COOKIE`：本人导出的 Cookie JSON 数组，或项目登录脚本生成的 Cookie + localStorage 状态对象（cookies/origins）。
 2. `DOUYIN_CONFIG`：以 `config.daily.example.json` 为模板的 JSON。好友名单、文字和 guard_key 都保存在这个 Secret 内。
 
-不要将凭证发到聊天、提交到 Git、上传到 Issue 或第三方配置生成器。Cookie 失效后必须本人重新登录并更新 Secret，程序不会绕过验证码或安全验证。
+不要将凭证发到聊天、提交到 Git、上传到 Issue 或第三方配置生成器。Cookie 失效后必须本人重新登录并更新 Secret，程序不会绕过验证码或安全验证。`scripts/login.py --copy` 可在本地打开 Chrome 由本人扫码；输出仅包含该会话的 Cookie/localStorage，不包括整个浏览器配置、密码、浏览历史、IndexedDB 或截图。导出内容超过 60 KB 时会停止，以免超过 GitHub Secret 的大小限制。
 
 `guard_key` 至少 32 字符，可在 Windows PowerShell 自行生成并复制：
 
@@ -62,5 +62,6 @@ GitHub 的 cron 不是准点送达保证：高负载可能延迟，极端情况�
 
 GitHub 官方 schedule 说明：
 https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule
+
 
 
