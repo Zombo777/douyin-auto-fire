@@ -20,7 +20,7 @@ def test_validation_and_single_target(monkeypatch):
 
 
 def test_reservation_is_daily_per_target_and_fails_closed(monkeypatch):
-    for key, value in {'GITHUB_REPOSITORY':'test/repo', 'GH_GUARD_TOKEN':'dummy', 'GITHUB_SHA':'a'*40}.items(): monkeypatch.setenv(key, value)
+    for key, value in {'GITHUB_REPOSITORY':'test/repo', 'GH_GUARD_TOKEN':'dummy', 'GITHUB_SHA':'a'*40, 'DOUYIN_CONFIG':'{"guard_key":"0123456789abcdef0123456789abcdef"}'}.items(): monkeypatch.setenv(key, value)
     guard = GitHubDailyHistory()
     key = guard.key('one', '2026-11-01', 'friend', 'message-a')
     assert key == guard.key('changed', '2026-11-01', 'friend', 'message-b')
