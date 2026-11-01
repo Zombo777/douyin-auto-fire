@@ -1,11 +1,82 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import re
 
 from playwright.async_api import Locator, Page
 
 from app.selectors import CHAT_PANEL_MARKERS, MESSAGE_INPUTS, SEARCH_INPUTS
+
+LOGGER = logging.getLogger("douyin_sender")
+
+# Fixed structural labels only. Never read/render element text or arbitrary
+# attributes: a chat page contains credentials, names and private messages.
+_SHAPE_FAMILIES = ("RightPanelHeader", "chatHeader", "ChatHeader", "messageContent",
+                   "chatContent", "MessagePanel", "messageEditor", "messageMsgInput",
+                   "DraftEditor", "SearchPanel", "conversationConversationItem")
+_SHAPE_GROUPS = {
+    "headers": '[class*="RightPanelHeader"], [class*="chatHeader"], [class*="ChatHeader"]',
+    "panels": '[class*="messageContent"], [class*="chatContent"], [class*="MessagePanel"]',
+    "composers": '[contenteditable], textarea, [role="textbox"], [class*="messageMsgInput"], [class*="messageEditor"], [class*="DraftEditor"]',
+    "search": '[class*="SearchPanel"], input[placeholder*="搜索"]',
+}
+_CHAT_SHAPE_JS = """({groups, families}) => {
+    const visible = el => {
+        const rect = el.getBoundingClientRect(), style = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+    };
+    const result = {};
+    for (const [group, selector] of Object.entries(groups)) {
+        const nodes = [...document.querySelectorAll(selector)];
+        result[group] = {
+            count: nodes.length,
+            visible_count: nodes.filter(visible).length,
+            shapes: nodes.slice(0, 12).map(el => ({
+                tag: el.tagName.toLowerCase(), role: el.getAttribute('role'),
+                editable: el.isContentEditable, visible: visible(el),
+                class_families: families.filter(f => [...el.classList].some(c => c.includes(f)))
+            }))
+        };
+    }
+    return result;
+}"""
+
+
+async def _collect_chat_structure(page: Page) -> dict:
+    try:
+        raw = await asyncio.wait_for(page.evaluate(_CHAT_SHAPE_JS, {
+            "groups": _SHAPE_GROUPS, "families": _SHAPE_FAMILIES,
+        }), timeout=3.0)
+    except Exception:
+        return {"diagnostic_unavailable": True}
+    if not isinstance(raw, dict):
+        return {"diagnostic_unavailable": True}
+    result = {}
+    tags = {"div", "span", "input", "textarea", "button", "section", "main", "form", "svg"}
+    roles = {"textbox", "button", "dialog", "searchbox", "combobox", "listbox", "option"}
+    for group in _SHAPE_GROUPS:
+        value = raw.get(group)
+        if not isinstance(value, dict):
+            continue
+        safe = {key: min(10000, max(0, value[key])) for key in ("count", "visible_count")
+                if type(value.get(key)) is int}
+        safe["shapes"] = []
+        shapes = value.get("shapes", [])
+        for shape in (shapes[:12] if isinstance(shapes, list) else []):
+            if not isinstance(shape, dict):
+                continue
+            families = shape.get("class_families", [])
+            safe["shapes"].append({
+                "tag": shape.get("tag") if shape.get("tag") in tags else "other",
+                "role": shape.get("role") if shape.get("role") in roles else None,
+                "editable": shape.get("editable") is True,
+                "visible": shape.get("visible") is True,
+                "class_families": [f for f in _SHAPE_FAMILIES if isinstance(families, list) and f in families],
+            })
+        result[group] = safe
+    return result
 
 
 class PageOperationError(RuntimeError):
@@ -54,7 +125,7 @@ class DouyinChat:
         result = await self._search_result(name)
         if result is None:
             raise PageOperationError("搜索不到目标好友")
-        await result.click(force=True)
+        await result.click()
         await self._confirm_opened(name)
 
     async def _search_result(self, name: str) -> Locator | None:
@@ -178,6 +249,7 @@ class DouyinChat:
             if last_error is None:
                 return
             if asyncio.get_running_loop().time() >= deadline:
+                LOGGER.error("聊天打开结构诊断: %s", json.dumps(await _collect_chat_structure(self.page), ensure_ascii=False))
                 raise last_error
             await self.page.wait_for_timeout(500)
 

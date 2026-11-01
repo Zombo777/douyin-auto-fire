@@ -137,10 +137,12 @@ async def run(dry_run: bool = False, env_file: str | None = None) -> int:
                                 if message_index < len(target.messages) - 1:
                                     await asyncio.sleep(random.uniform(task.interval_min, task.interval_max))
 
-                        # 记录目标成功
-                        results.append(TargetResult(target=target.name, status="success", sent=sent, target_alias=alias))
-                        metrics.record_target_success(sent)
-                        target_progress.finish_target("success")
+                        # A durable duplicate skip is not a newly delivered message.
+                        status = "duplicate" if not dry_run and sent == 0 else "success"
+                        results.append(TargetResult(target=target.name, status=status, sent=sent, target_alias=alias))
+                        if status == "success":
+                            metrics.record_target_success(sent)
+                        target_progress.finish_target("skipped" if status == "duplicate" else "success")
 
                     except (AuthenticationError, RiskControlError) as exc:
                         # 认证失效或风控，立即停止

@@ -11,7 +11,7 @@ from collections import Counter
 from urllib.parse import urlsplit
 
 
-MAX_JSON_RESPONSES = 16
+MAX_JSON_RESPONSES = 64
 MAX_PENDING_TASKS = 4
 MAX_COUNTER = 9999
 STATUS_FIELDS = ("status_code", "error_code", "code", "status")
@@ -38,7 +38,7 @@ def _category(url: object) -> str:
         path = parsed.path.lower()
         if "passport" in host or re.search(r"/(?:passport|auth|login)(?:/|$)", path):
             return "auth"
-        if host.startswith(("im.", "imapi.", "imapi-")) or re.search(
+        if host == "frontier-im.douyin.com" or host.startswith(("im.", "imapi.", "imapi-")) or re.search(
             r"/(?:im|message|messages|conversation|conversations)(?:/|$)", path
         ):
             return "im"

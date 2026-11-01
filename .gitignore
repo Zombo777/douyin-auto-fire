@@ -12,3 +12,7 @@ config/tasks/
 config.json
 storage-state.json
 storage_state/
+cookie*.json
+*.har
+pytest-of-*/
+
