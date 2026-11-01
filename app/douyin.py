@@ -125,6 +125,18 @@ class DouyinChat:
         raise PageOperationError("打开聊天失败")
 
     async def _open_target_once(self, name: str) -> None:
+        # Reuse an existing visible conversation before asking SearchPanel to
+        # create/open a session. The search action can leave the page unchanged
+        # even though its lookup API succeeded. No messages are sent here.
+        existing = await self._existing_conversation(name)
+        if existing is not None:
+            await existing.click()
+            try:
+                await self._confirm_opened(name, timeout_ms=min(5_000, self.confirm_timeout_ms))
+                LOGGER.info("已从已有会话列表确认目标聊天与输入框")
+                return
+            except PageOperationError:
+                LOGGER.info("已有会话尚未就绪，改用精确好友搜索")
         search = await first_visible(self.page, SEARCH_INPUTS, self.timeout_ms)
         await search.click()
         await search.fill("")
@@ -136,6 +148,25 @@ class DouyinChat:
             raise PageOperationError("搜索不到目标好友")
         await result.click()
         await self._confirm_opened(name)
+
+    async def _existing_conversation(self, name: str) -> Locator | None:
+        title_selectors = (
+            '[class*="conversationConversationItemtitle"]',
+            '[class*="ConversationItemtitle"]', '[class*="ConversationItemTitle"]',
+            '[class*="conversation-item-title"]', '[class*="conversation-item-Title"]',
+        )
+        for selector in ('[data-e2e="conversation-item"]', '[class*="conversationConversationItem"]',
+                         '[class*="conversation-item"]', '[class*="ConversationItem"]'):
+            try:
+                rows = self.page.locator(selector)
+                for index in range(await rows.count()):
+                    row = rows.nth(index)
+                    if (await row.is_visible() and
+                            await _visible_exact_text_locator(row, title_selectors, name) is not None):
+                        return row
+            except Exception:
+                continue
+        return None
 
     async def _search_result(self, name: str) -> Locator | None:
         # Search mode renders a separate SearchPanel. Its "发消息" action is the

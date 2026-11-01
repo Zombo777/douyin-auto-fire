@@ -464,3 +464,18 @@ async def test_hidden_cached_composer_does_not_mask_current_input():
     assert await first_visible(page, ('[contenteditable]',), 1000) is visible
     assert await DouyinChat(page)._composer_visible()
 
+@pytest.mark.asyncio
+async def test_existing_visible_conversation_opens_without_search(monkeypatch):
+    page = MagicMock()
+    chat = DouyinChat(page)
+    row = MagicMock()
+    row.click = AsyncMock()
+    chat._existing_conversation = AsyncMock(return_value=row)
+    chat._confirm_opened = AsyncMock()
+    search = AsyncMock()
+    monkeypatch.setattr('app.douyin.first_visible', search)
+    await chat._open_target_once('friend')
+    row.click.assert_awaited_once_with()
+    chat._confirm_opened.assert_awaited_once_with('friend', timeout_ms=5000)
+    search.assert_not_awaited()
+
