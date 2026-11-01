@@ -35,6 +35,8 @@ jobs:
           GH_GUARD_TOKEN: ${{ github.token }}
           GITHUB_DAILY_GUARD: 'true'
           HEADLESS: 'true'
+          BROWSER_CHANNEL: 'chromium'
+          NETWORK_DIAGNOSTICS: 'true'
           TRACE: 'false'
           PRODUCTION_ENABLED: ${{ vars.PRODUCTION_ENABLED }}
           LIVE_TEST_ENABLED: ${{ vars.LIVE_TEST_ENABLED }}

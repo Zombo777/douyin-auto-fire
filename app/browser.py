@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -75,9 +76,15 @@ async def open_douyin(settings: Settings) -> AsyncIterator[BrowserSession]:
     playwright: Playwright | None = None
     browser: Browser | None = None
     context: BrowserContext | None = None
+    diagnostics = None
     try:
         playwright = await async_playwright().start()
         launch_args = {"headless": settings.headless}
+        channel = os.getenv("BROWSER_CHANNEL", "").strip()
+        if channel:
+            if channel not in {"chromium", "chrome"}:
+                raise ConfigError("BROWSER_CHANNEL 仅支持 chromium 或 chrome")
+            launch_args["channel"] = channel
         if settings.browser_path:
             launch_args["executable_path"] = settings.browser_path
         browser = await playwright.chromium.launch(**launch_args)
@@ -96,10 +103,15 @@ async def open_douyin(settings: Settings) -> AsyncIterator[BrowserSession]:
             await context.add_cookies(_normalize_cookies(cookies))
 
         page = await context.new_page()
+        if os.getenv("NETWORK_DIAGNOSTICS") == "true":
+            from app.network_diagnostics import NetworkDiagnostics
+            diagnostics = NetworkDiagnostics(page)
         if settings.trace:
             await context.tracing.start(screenshots=True, snapshots=True, sources=False)
         yield BrowserSession(page=page, context=context)
     finally:
+        if diagnostics is not None:
+            LOGGER.info("网络安全诊断: %s", json.dumps(await diagnostics.finish(), sort_keys=True))
         if context:
             await context.close()
         if browser:
@@ -298,3 +310,4 @@ def _normalize_same_site(value: Any) -> str:
         "no_restriction": "None",
     }
     return mapping.get(str(value).lower(), "Lax")
+
