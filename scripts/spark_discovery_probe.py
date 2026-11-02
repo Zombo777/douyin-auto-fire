@@ -12,6 +12,7 @@ async def main():
     global phase
     phase = 'parse_auth'
     state=parse_auth_json(os.environ.get('DOUYIN_COOKIE', ''), 'DOUYIN_COOKIE')
+    print('Auth format: '+('state' if isinstance(state, dict) else 'cookie-list' if isinstance(state, list) else 'invalid'))
     phase = 'playwright'
     async with async_playwright() as p:
         phase = 'launch_browser'
