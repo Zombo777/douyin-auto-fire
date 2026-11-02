@@ -56,11 +56,15 @@ async def main():
                 if stalls>=40: creator_complete=True;break
                 await creator.wait_for_timeout(300)
             print(json.dumps({'streak_count':len(web_ids),'creator_count':len(creator_ids),'matched_count':len(web_ids&creator_ids),'web_reached_loaded_end':web_complete,'creator_reached_loaded_end':creator_complete}))
+            if not web_complete or not creator_complete or not web_ids or web_ids - creator_ids:
+                print('Discovery incomplete or unmatched; no messages were sent.')
+                return 1
+            return 0
         finally:
             await browser.close()
 
 try:
-    asyncio.run(main())
+    sys.exit(asyncio.run(main()))
 except Exception as exc:
     known = {'TimeoutError', 'TypeError', 'KeyError', 'ValueError', 'Error', 'ConfigError'}
     kind = type(exc).__name__ if type(exc).__name__ in known else 'OtherError'
