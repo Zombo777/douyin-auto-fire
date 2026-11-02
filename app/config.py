@@ -107,6 +107,19 @@ def load_task(settings: Settings) -> TaskConfig:
 
 
 def parse_auth_json(value: str, label: str) -> Any:
+    if value.startswith('gzip64:'):
+        import base64
+        import gzip
+        import io
+        try:
+            compressed = base64.b64decode(value[7:], validate=True)
+            with gzip.GzipFile(fileobj=io.BytesIO(compressed)) as stream:
+                raw = stream.read(10_000_001)
+            if len(raw) > 10_000_000:
+                raise ValueError('state too large')
+            return json.loads(raw)
+        except (ValueError, OSError, EOFError, UnicodeError) as exc:
+            raise ConfigError(f'{label} 压缩登录状态无效') from exc
     candidate = Path(value).expanduser()
     try:
         if candidate.is_file():
