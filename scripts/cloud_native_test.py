@@ -2,10 +2,10 @@
 import asyncio, json, os, sys, hashlib
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
-from app.browser import _normalize_cookies
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from app.config import parse_auth_json
+from app.browser import _normalize_cookies
 from playwright.async_api import async_playwright
 phase='initializing'
 
