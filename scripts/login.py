@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import argparse
+import base64
+import gzip
 import json
 import os
 import subprocess
@@ -29,12 +31,12 @@ async def login(output: Path, copy_to_clipboard: bool = False) -> None:
         await asyncio.to_thread(input)
         await page.goto(DOUYIN_URL, wait_until="domcontentloaded")
         await _verify_home_login(page)
-        from app.browser import open_private_messages
-        await open_private_messages(page)
+        # Cloud dry-run validates chat separately from local state export.
         # No IndexedDB, browser profile, passwords, history, screenshots or trace.
         state = await context.storage_state()
-        payload = json.dumps(state, ensure_ascii=True)
-        if len(payload.encode('utf-8')) > 60_000:
+        raw = json.dumps(state, ensure_ascii=True, separators=(',', ':')).encode('utf-8')
+        payload = 'gzip64:' + base64.b64encode(gzip.compress(raw, mtime=0)).decode('ascii')
+        if len(payload.encode('utf-8')) > 48 * 1024:
             raise RuntimeError("登录状态超过 GitHub Secret 大小限制，未保存或复制")
         output.parent.mkdir(parents=True, exist_ok=True)
         temporary = output.with_suffix(output.suffix + '.tmp')
