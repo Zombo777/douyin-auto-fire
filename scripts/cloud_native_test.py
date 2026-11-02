@@ -83,6 +83,8 @@ async def main():
             final=await page.locator('[class*="is-me-"]').count()
             remaining=await editor.evaluate('(e)=>e.querySelectorAll("img").length')
             print(json.dumps({'submitted_once':True,'new_outgoing_count':final-before,'remaining_editor_images':remaining}))
+            # Local page echo does not establish server delivery.
+            raise RuntimeError('delivery unverified; do not retry automatically')
         finally:await browser.close()
 
 if __name__=='__main__':
