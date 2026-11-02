@@ -30,6 +30,17 @@ async def main():
                 web_ids.update(data['ids']); stalls=0 if data['moved'] else stalls+1
                 if stalls>=40: web_complete=True; break
                 await web.wait_for_timeout(300)
+            await web.evaluate('''() => {let box=document.querySelector('.conversationConversationItemwrapper')?.parentElement;while(box && box.scrollHeight<=box.clientHeight+10)box=box.parentElement;if(box)box.scrollTop=0}''')
+            await web.wait_for_timeout(3000)
+            second_pass=set(); second_end=False; stalls=0
+            for _ in range(160):
+                data=await web.evaluate('''() => {let rows=[...document.querySelectorAll('.conversationConversationItemwrapper')];let ids=rows.filter(e=>e.querySelector('.commonStreakstreakContainer')).map(row=>{
+                  let k=Object.keys(row).find(k=>k.startsWith('__reactFiber')),f=k&&row[k];for(let i=0;f&&i<8;i++,f=f.return){let c=f.memoizedProps?.conversation;if(c?.id!=null)return String(c.id)}return null;
+                }).filter(Boolean); let box=rows[0]?.parentElement; while(box && box.scrollHeight<=box.clientHeight+10)box=box.parentElement;
+                if(!box)return {ids,moved:false}; let old=box.scrollTop;box.scrollTop+=Math.max(100,box.clientHeight*0.6);return {ids,moved:box.scrollTop>old};}''')
+                second_pass.update(data['ids']);stalls=0 if data['moved'] else stalls+1
+                if stalls>=40:second_end=True;break
+                await web.wait_for_timeout(600)
             creator=await context.new_page()
             await creator.goto('https://creator.douyin.com/creator-micro/data/following/chat',wait_until='domcontentloaded',timeout=60000)
             await creator.locator('[class*="item-header-name-"]').first.wait_for(state='attached',timeout=45000)
@@ -56,9 +67,9 @@ async def main():
                     group_ids.update(data['ids']);stalls=0 if data['moved'] else stalls+1
                     if stalls>=40:break
                     await creator.wait_for_timeout(300)
-            print(json.dumps({'streak_count':len(web_ids),'creator_count':len(creator_ids),'matched_count':len(web_ids&creator_ids),'unmatched_in_groups':len((web_ids-creator_ids)&group_ids),'unmatched_other':len(web_ids-(creator_ids|group_ids)),'web_reached_loaded_end':web_complete,'creator_reached_loaded_end':creator_complete}))
-            if not web_complete or not creator_complete or not web_ids or web_ids-(creator_ids|group_ids):
-                print('Discovery incomplete or unmatched; no messages were sent.')
+            print(json.dumps({'streak_count_first':len(web_ids),'streak_count_second':len(second_pass),'same_streaks':web_ids==second_pass,'creator_count':len(creator_ids),'matched_count':len(second_pass&creator_ids),'unmatched_in_groups':len((second_pass-creator_ids)&group_ids),'unmatched_other':len(second_pass-(creator_ids|group_ids)),'web_reached_loaded_end':web_complete and second_end,'creator_reached_loaded_end':creator_complete}))
+            if not web_complete or not second_end or not creator_complete or not web_ids or web_ids != second_pass or second_pass-(creator_ids|group_ids):
+                print('Discovery unstable or incomplete; no messages were sent.')
                 return 1
             return 0
         finally:
