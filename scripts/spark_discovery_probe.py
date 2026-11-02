@@ -6,18 +6,10 @@ from app.config import parse_auth_json
 from app.browser import _normalize_cookies
 from playwright.async_api import async_playwright
 
-phase = 'startup'
-
 async def main():
-    global phase
-    phase = 'parse_auth'
     state=parse_auth_json(os.environ.get('DOUYIN_COOKIE', ''), 'DOUYIN_COOKIE')
-    print('Auth format: '+('state' if isinstance(state, dict) else 'cookie-list' if isinstance(state, list) else 'invalid'))
-    phase = 'playwright'
     async with async_playwright() as p:
-        phase = 'launch_browser'
         browser=await p.chromium.launch(channel='chrome',headless=True)
-        phase = 'create_context'
         if isinstance(state, dict):
             context=await browser.new_context(storage_state=state,locale='zh-CN')
         elif isinstance(state, list):
@@ -26,7 +18,6 @@ async def main():
         else:
             raise ValueError('Invalid auth format')
         try:
-            phase = 'open_web_chat'
             web=await context.new_page()
             await web.goto('https://www.douyin.com/chat',wait_until='domcontentloaded',timeout=60000)
             await web.locator('.conversationConversationItemwrapper').first.wait_for(state='attached',timeout=45000)
@@ -39,7 +30,6 @@ async def main():
                 web_ids.update(data['ids']); stalls=0 if data['moved'] else stalls+1
                 if stalls>=40: web_complete=True; break
                 await web.wait_for_timeout(300)
-            phase = 'open_creator_chat'
             creator=await context.new_page()
             await creator.goto('https://creator.douyin.com/creator-micro/data/following/chat',wait_until='domcontentloaded',timeout=60000)
             await creator.locator('[class*="item-header-name-"]').first.wait_for(state='attached',timeout=45000)
@@ -55,8 +45,19 @@ async def main():
                 creator_ids.update(data['ids']);stalls=0 if data['moved'] else stalls+1
                 if stalls>=40: creator_complete=True;break
                 await creator.wait_for_timeout(300)
-            print(json.dumps({'streak_count':len(web_ids),'creator_count':len(creator_ids),'matched_count':len(web_ids&creator_ids),'web_reached_loaded_end':web_complete,'creator_reached_loaded_end':creator_complete}))
-            if not web_complete or not creator_complete or not web_ids or web_ids - creator_ids:
+            group_ids=set(); group_tab=creator.get_by_text('群消息',exact=True)
+            if await group_tab.count()==1 and await group_tab.is_visible():
+                await group_tab.click(); await creator.wait_for_timeout(3000)
+                stalls=0
+                for _ in range(160):
+                    data=await creator.evaluate('''() => {let rows=[...document.querySelectorAll('li')].filter(e=>e.querySelector('[class*="item-header-name-"]'));let ids=rows.map(row=>{
+                      let k=Object.keys(row).find(k=>k.startsWith('__reactFiber')),f=k&&row[k];for(let i=0;f&&i<8;i++,f=f.return){let c=f.memoizedProps?.header?.props?.conversation;if(c?.id!=null)return String(c.id)}return null;
+                    }).filter(Boolean);let box=[...document.querySelectorAll('#sub-app [role="grid"], #sub-app .ReactVirtualized__Grid')].find(x=>x.clientHeight>0&&x.scrollHeight>x.clientHeight);if(!box)return {ids,moved:false};let old=box.scrollTop;box.scrollTop+=Math.max(100,box.clientHeight*0.6);return {ids,moved:box.scrollTop>old};}''')
+                    group_ids.update(data['ids']);stalls=0 if data['moved'] else stalls+1
+                    if stalls>=40:break
+                    await creator.wait_for_timeout(300)
+            print(json.dumps({'streak_count':len(web_ids),'creator_count':len(creator_ids),'matched_count':len(web_ids&creator_ids),'unmatched_in_groups':len((web_ids-creator_ids)&group_ids),'unmatched_other':len(web_ids-(creator_ids|group_ids)),'web_reached_loaded_end':web_complete,'creator_reached_loaded_end':creator_complete}))
+            if not web_complete or not creator_complete or not web_ids or web_ids-(creator_ids|group_ids):
                 print('Discovery incomplete or unmatched; no messages were sent.')
                 return 1
             return 0
@@ -65,9 +66,7 @@ async def main():
 
 try:
     sys.exit(asyncio.run(main()))
-except Exception as exc:
-    known = {'TimeoutError', 'TypeError', 'KeyError', 'ValueError', 'Error', 'ConfigError'}
-    kind = type(exc).__name__ if type(exc).__name__ in known else 'OtherError'
-    print(f'Spark discovery probe failed at {phase}: {kind}; no messages were sent.')
+except Exception:
+    print('Spark discovery probe failed; no messages were sent.')
     sys.exit(1)
 
