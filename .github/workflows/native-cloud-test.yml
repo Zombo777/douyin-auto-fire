@@ -1,0 +1,33 @@
+name: One-time native emoji delivery test
+on:
+  workflow_dispatch:
+    inputs:
+      approved:
+        description: '真实发送一次原生爱心，仅限一个测试好友'
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: douyin-daily-sender
+  cancel-in-progress: false
+jobs:
+  send_one:
+    if: ${{ inputs.approved }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python -m playwright install --with-deps chrome
+      - name: Send at most once
+        env:
+          DOUYIN_COOKIE: ${{ secrets.DOUYIN_COOKIE }}
+          DOUYIN_TEST_FRIEND: ${{ secrets.DOUYIN_TEST_FRIEND }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/cloud_native_test.py
