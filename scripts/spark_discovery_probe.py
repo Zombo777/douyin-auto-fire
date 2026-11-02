@@ -3,6 +3,7 @@ import asyncio, json, os, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.config import parse_auth_json
+from app.browser import _normalize_cookies
 from playwright.async_api import async_playwright
 
 phase = 'startup'
@@ -16,7 +17,13 @@ async def main():
         phase = 'launch_browser'
         browser=await p.chromium.launch(channel='chrome',headless=True)
         phase = 'create_context'
-        context=await browser.new_context(storage_state=state,locale='zh-CN')
+        if isinstance(state, dict):
+            context=await browser.new_context(storage_state=state,locale='zh-CN')
+        elif isinstance(state, list):
+            context=await browser.new_context(locale='zh-CN')
+            await context.add_cookies(_normalize_cookies(state))
+        else:
+            raise ValueError('Invalid auth format')
         try:
             phase = 'open_web_chat'
             web=await context.new_page()
