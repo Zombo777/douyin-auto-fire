@@ -5,12 +5,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.config import parse_auth_json
 from playwright.async_api import async_playwright
 
+phase = 'startup'
+
 async def main():
+    global phase
+    phase = 'parse_auth'
     state=parse_auth_json(os.environ.get('DOUYIN_COOKIE', ''), 'DOUYIN_COOKIE')
+    phase = 'playwright'
     async with async_playwright() as p:
+        phase = 'launch_browser'
         browser=await p.chromium.launch(channel='chrome',headless=True)
+        phase = 'create_context'
         context=await browser.new_context(storage_state=state,locale='zh-CN')
         try:
+            phase = 'open_web_chat'
             web=await context.new_page()
             await web.goto('https://www.douyin.com/chat',wait_until='domcontentloaded',timeout=60000)
             await web.locator('.conversationConversationItemwrapper').first.wait_for(state='attached',timeout=45000)
@@ -23,6 +31,7 @@ async def main():
                 web_ids.update(data['ids']); stalls=0 if data['moved'] else stalls+1
                 if stalls>=40: web_complete=True; break
                 await web.wait_for_timeout(300)
+            phase = 'open_creator_chat'
             creator=await context.new_page()
             await creator.goto('https://creator.douyin.com/creator-micro/data/following/chat',wait_until='domcontentloaded',timeout=60000)
             await creator.locator('[class*="item-header-name-"]').first.wait_for(state='attached',timeout=45000)
@@ -44,7 +53,9 @@ async def main():
 
 try:
     asyncio.run(main())
-except Exception:
-    print('Spark discovery probe failed; no messages were sent.')
+except Exception as exc:
+    known = {'TimeoutError', 'TypeError', 'KeyError', 'ValueError', 'Error', 'ConfigError'}
+    kind = type(exc).__name__ if type(exc).__name__ in known else 'OtherError'
+    print(f'Spark discovery probe failed at {phase}: {kind}; no messages were sent.')
     sys.exit(1)
 
