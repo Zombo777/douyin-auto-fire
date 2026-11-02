@@ -61,6 +61,6 @@ async def main():
 
 try:
     asyncio.run(main())
-except Exception:
-    print('Read-only delivery check failed.')
+except Exception as exc:
+    print('Read-only delivery check failed at '+phase+' ('+type(exc).__name__+').')
     sys.exit(1)
