@@ -3,6 +3,16 @@ import json
 import pytest
 from app.models import Settings
 from app.browser import open_douyin
+from app.config import parse_auth_json, ConfigError
+
+def test_compressed_auth_state_round_trip():
+    import base64
+    import gzip
+    state = {'cookies': [], 'origins': [{'origin': 'https://www.douyin.com', 'localStorage': []}]}
+    encoded = 'gzip64:' + base64.b64encode(gzip.compress(json.dumps(state).encode())).decode()
+    assert parse_auth_json(encoded, 'DOUYIN_COOKIE') == state
+    with pytest.raises(ConfigError):
+        parse_auth_json('gzip64:invalid', 'DOUYIN_COOKIE')
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('state_mode', [True, False])
