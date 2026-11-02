@@ -25,7 +25,7 @@ async def main():
         try:
             phase='open_page'
             page=await context.new_page()
-            await page.goto('https://creator.douyin.com/creator-micro/data/following/chat',wait_until='domcontentloaded',timeout=60000)
+            await page.goto('https://creator.douyin.com/creator-micro/data/following/chat',wait_until='commit',timeout=60000)
             await page.locator('[class*="item-header-name-"]').first.wait_for(state='visible',timeout=45000)
             phase='friends_tab'
             tab=page.get_by_text('朋友私信',exact=True)
